@@ -11,13 +11,29 @@
 
 ## 编译方法
 
-### 使用 Android Studio 编译
+### 方法一：使用 GitHub Actions 自动构建（推荐）
+1. 在 GitHub 上创建新仓库
+2. 将本项目代码推送到 GitHub 仓库
+3. 推送后 GitHub Actions 会自动开始构建
+4. 在仓库的 Actions 页面查看构建进度
+5. 构建完成后，在 Artifacts 中下载 `app-debug-apk`
+
+### 方法二：使用 Android Studio 编译
 1. 下载并安装 Android Studio
 2. 打开 Android Studio，选择 "Open an existing project"
 3. 选择本项目文件夹（Ihatethis）
 4. 等待 Gradle 同步完成
 5. 点击菜单 Build -> Build Bundle(s) / APK(s) -> Build APK(s)
 6. 编译完成后，APK 文件位于 `app/build/outputs/apk/debug/app-debug.apk`
+
+## 推送到 GitHub 的步骤
+```bash
+# 1. 在 GitHub 上创建新仓库（不要初始化 README、.gitignore 等）
+# 2. 在本地项目目录执行：
+git remote add origin https://github.com/你的用户名/仓库名.git
+git branch -M main
+git push -u origin main
+```
 
 ## 安装说明
 1. 将 APK 文件传到手机
