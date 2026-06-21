@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1a1a1a"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 标题 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="设置"
+            android:textColor="#ffffff"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp" />
+
+        <!-- 触发开始时间 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="触发开始时间"
+            android:textColor="#cccccc"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="20dp">
+
+            <NumberPicker
+                android:id="@+id/np_start_hour"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:theme="@style/NumberPickerTheme" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" : "
+                android:textColor="#ffffff"
+                android:textSize="24sp" />
+
+            <NumberPicker
+                android:id="@+id/np_start_minute"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:theme="@style/NumberPickerTheme" />
+        </LinearLayout>
+
+        <!-- 触发结束时间 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="触发结束时间"
+            android:textColor="#cccccc"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="20dp">
+
+            <NumberPicker
+                android:id="@+id/np_end_hour"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:theme="@style/NumberPickerTheme" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" : "
+                android:textColor="#ffffff"
+                android:textSize="24sp" />
+
+            <NumberPicker
+                android:id="@+id/np_end_minute"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:theme="@style/NumberPickerTheme" />
+        </LinearLayout>
+
+        <!-- 渐变时长 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="渐变时长（分钟）"
+            android:textColor="#cccccc"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <SeekBar
+                android:id="@+id/sb_fade_minutes"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="600"
+                android:progress="240" />
+
+            <TextView
+                android:id="@+id/tv_fade_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="240分钟"
+                android:textColor="#ffffff"
+                android:textSize="16sp"
+                android:layout_marginLeft="12dp"
+                android:minWidth="80dp"
+                android:gravity="right" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="范围：1 - 600 分钟（10小时）"
+            android:textColor="#888888"
+            android:textSize="12sp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- 模拟预览区域 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#333333"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="模拟预览"
+            android:textColor="#cccccc"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- 预览区域 -->
+        <RelativeLayout
+            android:id="@+id/preview_container"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:background="#000000"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:id="@+id/preview_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="我好恨"
+                android:textSize="72sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:includeFontPadding="false" />
+        </RelativeLayout>
+
+        <!-- 模拟进度 -->
+        <TextView
+            android:id="@+id/tv_preview_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="进度：0%"
+            android:textColor="#888888"
+            android:textSize="14sp"
+            android:layout_marginBottom="8dp" />
+
+        <SeekBar
+            android:id="@+id/sb_preview_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="0"
+            android:layout_marginBottom="12dp" />
+
+        <!-- 按钮区域 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <Button
+                android:id="@+id/btn_play_animation"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="播放动画"
+                android:background="#8b0000"
+                android:textColor="#ffffff"
+                android:layout_marginRight="8dp" />
+
+            <Button
+                android:id="@+id/btn_stop_animation"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="停止"
+                android:background="#444444"
+                android:textColor="#ffffff"
+                android:layout_marginLeft="8dp" />
+        </LinearLayout>
+
+        <!-- 保存和重置按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="20dp">
+
+            <Button
+                android:id="@+id/btn_reset"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="恢复默认"
+                android:background="#444444"
+                android:textColor="#ffffff"
+                android:layout_marginRight="8dp" />
+
+            <Button
+                android:id="@+id/btn_save"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="保存设置"
+                android:background="#8b0000"
+                android:textColor="#ffffff"
+                android:layout_marginLeft="8dp" />
+        </LinearLayout>
+
+        <!-- 返回按钮 -->
+        <Button
+            android:id="@+id/btn_back"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="返回"
+            android:background="#333333"
+            android:textColor="#cccccc"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="20dp" />
+
+    </LinearLayout>
+</ScrollView>

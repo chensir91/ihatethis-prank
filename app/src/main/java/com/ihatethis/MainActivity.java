@@ -1,34 +1,41 @@
 package com.ihatethis;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.TextView;
-
 import java.util.Calendar;
 
 public class MainActivity extends Activity {
-
     private TextView hateText;
     private Handler handler = new Handler();
     private Runnable updateRunnable;
     private long startTime; // 应用启动时间（开机时间）
     
+    private SettingsManager settingsManager;
+    
     // 血红色（深血红色）
     private static final int BLOOD_RED = Color.rgb(139, 0, 0);
-    // 结束时间：4:44
-    private static final int END_HOUR = 4;
-    private static final int END_MINUTE = 44;
-    // 完全显示需要的分钟数：240分钟
-    private static final int FULL_ALPHA_MINUTES = 240;
+    
+    // 隐藏设置入口：连续点击计数
+    private int tapCount = 0;
+    private static final int TAPS_TO_SETTINGS = 5;
+    private static final long TAP_TIMEOUT = 2000; // 2秒内连续点击
+    private Handler tapHandler = new Handler();
+    private Runnable tapResetRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        settingsManager = new SettingsManager(this);
         
         // 全屏透明
         requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -40,8 +47,13 @@ public class MainActivity extends Activity {
         
         hateText = findViewById(R.id.hate_text);
         
+        // 设置点击事件（隐藏入口）
+        setupTapDetector();
+        
         // 检查当前时间是否在触发范围内
         if (!isInTimeRange()) {
+            // 不在时间范围内，直接进入设置界面
+            openSettings();
             finish();
             return;
         }
@@ -57,7 +69,58 @@ public class MainActivity extends Activity {
     }
     
     /**
-     * 检查当前时间是否在0:00 - 4:44之间
+     * 设置连续点击检测器（隐藏入口进入设置）
+     */
+    private void setupTapDetector() {
+        hateText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                handleTap();
+            }
+        });
+        
+        // 也可以点击整个屏幕
+        findViewById(android.R.id.content).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                handleTap();
+            }
+        });
+    }
+    
+    private void handleTap() {
+        tapCount++;
+        
+        // 重置计时器
+        if (tapResetRunnable != null) {
+            tapHandler.removeCallbacks(tapResetRunnable);
+        }
+        
+        tapResetRunnable = new Runnable() {
+            @Override
+            public void run() {
+                tapCount = 0;
+            }
+        };
+        tapHandler.postDelayed(tapResetRunnable, TAP_TIMEOUT);
+        
+        // 检查是否达到进入设置的次数
+        if (tapCount >= TAPS_TO_SETTINGS) {
+            tapCount = 0;
+            openSettings();
+        }
+    }
+    
+    /**
+     * 打开设置界面
+     */
+    private void openSettings() {
+        Intent intent = new Intent(this, SettingsActivity.class);
+        startActivity(intent);
+    }
+    
+    /**
+     * 检查当前时间是否在触发范围内
      */
     private boolean isInTimeRange() {
         Calendar cal = Calendar.getInstance();
@@ -65,9 +128,16 @@ public class MainActivity extends Activity {
         int minute = cal.get(Calendar.MINUTE);
         
         int currentMinutes = hour * 60 + minute;
-        int endMinutes = END_HOUR * 60 + END_MINUTE;
+        int startMinutes = settingsManager.getStartTotalMinutes();
+        int endMinutes = settingsManager.getEndTotalMinutes();
         
-        return currentMinutes >= 0 && currentMinutes <= endMinutes;
+        // 处理跨天的情况（比如开始时间22:00，结束时间06:00）
+        if (startMinutes <= endMinutes) {
+            return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+        } else {
+            // 跨天：从开始时间到24:00，或者从0:00到结束时间
+            return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+        }
     }
     
     /**
@@ -83,10 +153,10 @@ public class MainActivity extends Activity {
      */
     private void updateTextColor() {
         int minutesPassed = getMinutesSinceStart();
+        int fadeMinutes = settingsManager.getFadeMinutes();
         
         // 计算alpha值：0-255
-        // 240分钟后达到完全不透明
-        float ratio = (float) minutesPassed / FULL_ALPHA_MINUTES;
+        float ratio = (float) minutesPassed / fadeMinutes;
         ratio = Math.min(ratio, 1.0f); // 最大1.0
         
         int alpha = (int) (ratio * 255);
@@ -104,7 +174,7 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (!isInTimeRange()) {
-                    // 超过4:44，停止并退出
+                    // 超过结束时间，停止并退出
                     finish();
                     return;
                 }
@@ -125,10 +195,24 @@ public class MainActivity extends Activity {
     }
     
     @Override
+    protected void onResume() {
+        super.onResume();
+        // 从设置返回时，重新检查时间
+        if (isInTimeRange() && updateRunnable == null) {
+            startTime = SystemClock.elapsedRealtime();
+            updateTextColor();
+            startColorUpdate();
+        }
+    }
+    
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         if (handler != null && updateRunnable != null) {
             handler.removeCallbacks(updateRunnable);
+        }
+        if (tapHandler != null && tapResetRunnable != null) {
+            tapHandler.removeCallbacks(tapResetRunnable);
         }
     }
     
