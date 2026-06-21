@@ -45,6 +45,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- 悬浮窗服务 -->
+        <service
+            android:name=".FloatingTextService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_text_display" />
+        </service>
+
     </application>
 
 </manifest>

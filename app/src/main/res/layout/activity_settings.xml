@@ -221,6 +221,71 @@
                 android:layout_marginLeft="8dp" />
         </LinearLayout>
 
+        <!-- 悬浮窗控制区域 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#333333"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="悬浮窗控制"
+            android:textColor="#cccccc"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- 权限状态 -->
+        <TextView
+            android:id="@+id/tv_permission_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚠️ 点击开启悬浮窗权限"
+            android:textColor="#FF9800"
+            android:textSize="14sp"
+            android:layout_marginBottom="12dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- 启动/停止服务按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <Button
+                android:id="@+id/btn_start_service"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="启动服务"
+                android:background="#8b0000"
+                android:textColor="#ffffff"
+                android:layout_marginRight="8dp" />
+
+            <Button
+                android:id="@+id/btn_stop_service"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="停止服务"
+                android:background="#444444"
+                android:textColor="#ffffff"
+                android:layout_marginLeft="8dp" />
+        </LinearLayout>
+
+        <!-- 预览悬浮效果按钮 -->
+        <Button
+            android:id="@+id/btn_preview_float"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="预览悬浮效果（3秒）"
+            android:background="#2d5a87"
+            android:textColor="#ffffff"
+            android:layout_marginBottom="20dp" />
+
         <!-- 保存和重置按钮 -->
         <LinearLayout
             android:layout_width="match_parent"

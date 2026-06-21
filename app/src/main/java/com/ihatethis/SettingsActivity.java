@@ -1,9 +1,13 @@
 package com.ihatethis;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.NumberPicker;
@@ -29,6 +33,10 @@ public class SettingsActivity extends Activity {
     private TextView tvPreviewProgress;
     private Button btnPlayAnimation, btnStopAnimation;
     
+    // 悬浮窗控制
+    private Button btnStartService, btnStopService, btnPreviewFloat;
+    private TextView tvPermissionStatus;
+    
     // 按钮
     private Button btnSave, btnReset, btnBack;
     
@@ -40,6 +48,8 @@ public class SettingsActivity extends Activity {
     
     // 血红色
     private static final int BLOOD_RED = Color.rgb(139, 0, 0);
+    
+    private static final int REQUEST_OVERLAY_PERMISSION = 1001;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +63,7 @@ public class SettingsActivity extends Activity {
         setupListeners();
         loadSettings();
         updatePreview(0);
+        checkPermissionStatus();
     }
     
     private void initViews() {
@@ -69,6 +80,11 @@ public class SettingsActivity extends Activity {
         tvPreviewProgress = findViewById(R.id.tv_preview_progress);
         btnPlayAnimation = findViewById(R.id.btn_play_animation);
         btnStopAnimation = findViewById(R.id.btn_stop_animation);
+        
+        btnStartService = findViewById(R.id.btn_start_service);
+        btnStopService = findViewById(R.id.btn_stop_service);
+        btnPreviewFloat = findViewById(R.id.btn_preview_float);
+        tvPermissionStatus = findViewById(R.id.tv_permission_status);
         
         btnSave = findViewById(R.id.btn_save);
         btnReset = findViewById(R.id.btn_reset);
@@ -147,6 +163,59 @@ public class SettingsActivity extends Activity {
             @Override
             public void onClick(View v) {
                 stopAnimation();
+            }
+        });
+        
+        // 启动悬浮服务
+        btnStartService.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!checkOverlayPermission()) {
+                    requestOverlayPermission();
+                    return;
+                }
+                saveSettings();
+                startFloatingService("START");
+                Toast.makeText(SettingsActivity.this, "悬浮服务已启动", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        // 停止悬浮服务
+        btnStopService.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startFloatingService("STOP");
+                Toast.makeText(SettingsActivity.this, "悬浮服务已停止", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        // 预览悬浮效果
+        btnPreviewFloat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!checkOverlayPermission()) {
+                    requestOverlayPermission();
+                    return;
+                }
+                saveSettings();
+                startFloatingService("PREVIEW");
+                Toast.makeText(SettingsActivity.this, "悬浮预览已启动，3秒后自动关闭", Toast.LENGTH_SHORT).show();
+                
+                // 3秒后自动停止预览
+                new Handler().postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        startFloatingService("STOP");
+                    }
+                }, 3000);
+            }
+        });
+        
+        // 权限状态点击
+        tvPermissionStatus.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestOverlayPermission();
             }
         });
         
@@ -245,6 +314,65 @@ public class SettingsActivity extends Activity {
         isAnimating = false;
         if (animationHandler != null && animationRunnable != null) {
             animationHandler.removeCallbacks(animationRunnable);
+        }
+    }
+    
+    /**
+     * 检查悬浮窗权限
+     */
+    private boolean checkOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return Settings.canDrawOverlays(this);
+        }
+        return true;
+    }
+    
+    /**
+     * 申请悬浮窗权限
+     */
+    private void requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION);
+        }
+    }
+    
+    /**
+     * 检查并更新权限状态显示
+     */
+    private void checkPermissionStatus() {
+        if (checkOverlayPermission()) {
+            tvPermissionStatus.setText("✅ 悬浮窗权限已开启");
+            tvPermissionStatus.setTextColor(Color.parseColor("#4CAF50"));
+        } else {
+            tvPermissionStatus.setText("⚠️ 点击开启悬浮窗权限");
+            tvPermissionStatus.setTextColor(Color.parseColor("#FF9800"));
+        }
+    }
+    
+    /**
+     * 启动悬浮服务
+     */
+    private void startFloatingService(String action) {
+        Intent intent = new Intent(this, FloatingTextService.class);
+        intent.setAction(action);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+    }
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_OVERLAY_PERMISSION) {
+            checkPermissionStatus();
+            if (checkOverlayPermission()) {
+                Toast.makeText(this, "悬浮窗权限已开启", Toast.LENGTH_SHORT).show();
+            }
         }
     }
     
