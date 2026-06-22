@@ -10,320 +10,304 @@ import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.SystemClock;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
+import java.util.Random;
 
 public class FloatingTextService extends Service {
 
-    private WindowManager windowManager;
-    private View floatingView;
-    private TextView hateText;
-    
-    private SettingsManager settingsManager;
-    private Handler handler = new Handler();
-    private Runnable updateRunnable;
-    private long startTime;
-    
-    // 血红色
-    private static final int BLOOD_RED = Color.rgb(139, 0, 0);
-    
-    // 标记是否正在显示
-    private boolean isShowing = false;
-    
-    private static final String CHANNEL_ID = "floating_service_channel";
-    private static final int NOTIFICATION_ID = 1;
+    private static final String CHANNEL_ID = "floating_text_v4";
+    private static final int NOTIFY_ID = 1;
+
+    private WindowManager wm;
+    private SettingsManager sm;
+    private Handler mainHandler;
+    private Random rng = new Random();
+
+    private boolean running = false;
+    private final List<FloatingText> activeTexts = new ArrayList<>();
 
     @Override
     public void onCreate() {
         super.onCreate();
-        settingsManager = new SettingsManager(this);
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        
-        // 创建通知渠道（Android 8.0+）
-        createNotificationChannel();
-        
-        // 启动前台服务
-        startForeground(NOTIFICATION_ID, buildNotification());
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        sm = new SettingsManager(this);
+        mainHandler = new Handler(Looper.getMainLooper());
+        createChannel();
+        startForeground(NOTIFY_ID, buildNotification());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
             String action = intent.getAction();
-            if ("START".equals(action)) {
-                checkAndShow();
-            } else if ("STOP".equals(action)) {
-                removeFloatingView();
-                stopSelf();
-            } else if ("PREVIEW".equals(action)) {
-                // 预览模式：直接显示并快速播放动画
-                showFloatingView();
-                startPreviewAnimation();
-            }
+            if ("START".equals(action)) { startLoop(); }
+            else if ("STOP".equals(action)) { stopLoop(); stopSelf(); }
+            else if ("PREVIEW".equals(action)) { doPreview(); }
         }
-        return START_STICKY;
-    }
-    
-    /**
-     * 创建通知渠道
-     */
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "悬浮窗服务",
-                    NotificationManager.IMPORTANCE_MIN
-            );
-            channel.setDescription("后台运行悬浮窗服务");
-            channel.setShowBadge(false);
-            
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
-        }
-    }
-    
-    /**
-     * 构建通知
-     */
-    private Notification buildNotification() {
-        Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder = new Notification.Builder(this, CHANNEL_ID);
-        } else {
-            builder = new Notification.Builder(this);
-        }
-        
-        builder.setContentTitle("系统服务")
-                .setContentText("正在运行")
-                .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                .setPriority(Notification.PRIORITY_MIN)
-                .setOngoing(true);
-        
-        return builder.build();
+        return START_NOT_STICKY;
     }
 
-    /**
-     * 检查时间并显示
-     */
-    private void checkAndShow() {
-        if (isInTimeRange()) {
-            showFloatingView();
-            startTime = SystemClock.elapsedRealtime();
-            startColorUpdate();
-        } else {
-            // 不在时间范围内，定时检查
-            scheduleNextCheck();
-        }
+    // ==================== Main Loop ====================
+
+    private void startLoop() {
+        if (running) return;
+        running = true;
+        scheduleNext();
     }
 
-    /**
-     * 显示悬浮窗
-     */
-    private void showFloatingView() {
-        if (isShowing || floatingView != null) {
+    private void stopLoop() {
+        running = false;
+        mainHandler.removeCallbacksAndMessages(null);
+        clearAllTexts();
+    }
+
+    private void scheduleNext() {
+        if (!running) return;
+
+        Calendar cal = Calendar.getInstance();
+        int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+        float progress = sm.getTimeProgress(nowMin);
+
+        if (progress < 0) {
+            // Not in range, check again in 30s
+            mainHandler.postDelayed(this::scheduleNext, 30000);
             return;
         }
 
-        floatingView = LayoutInflater.from(this).inflate(R.layout.floating_text, null);
-        hateText = floatingView.findViewById(R.id.floating_hate_text);
+        // Spawn text
+        spawnText(progress);
 
-        // 设置初始透明
-        hateText.setTextColor(Color.argb(0, Color.red(BLOOD_RED), Color.green(BLOOD_RED), Color.blue(BLOOD_RED)));
+        // Schedule next based on frequency
+        int freq = sm.getInterpolatedFrequency(progress);
+        if (freq <= 0) freq = 1;
+        long interval = 60000L / freq;
+        // Add slight randomness ±20%
+        interval = (long)(interval * (0.8 + rng.nextFloat() * 0.4));
+        mainHandler.postDelayed(this::scheduleNext, interval);
+    }
 
-        // 布局参数
-        int layoutType;
+    // ==================== Spawn & Animate ====================
+
+    private void spawnText(float progress) {
+        String[] pool = sm.getTexts();
+        List<String> valid = new ArrayList<>();
+        for (String s : pool) if (s != null && !s.isEmpty()) valid.add(s);
+        if (valid.isEmpty()) return;
+
+        String text = valid.get(rng.nextInt(valid.size()));
+
+        // Font size: random between min and max
+        int minF = sm.getInterpolatedMinFont(progress);
+        int maxF = sm.getInterpolatedMaxFont(progress);
+        if (maxF < minF) maxF = minF;
+        int fontSize = minF + rng.nextInt(maxF - minF + 1);
+
+        int color = sm.getFontColor();
+        int displayMs = sm.getDisplayDurationMs();
+        int typeMs = sm.getTypingSpeedMs();
+        float dirDeg = sm.getInterpolatedDirection(progress);
+        float shake = sm.getInterpolatedShake(progress);
+
+        // Random rotation direction (±)
+        if (rng.nextBoolean()) dirDeg = -dirDeg;
+
+        FloatingText ft = new FloatingText(text, fontSize, color, typeMs, displayMs, dirDeg, shake);
+        activeTexts.add(ft);
+        ft.show();
+    }
+
+    private void clearAllTexts() {
+        for (FloatingText ft : new ArrayList<>(activeTexts)) {
+            ft.destroy();
+        }
+        activeTexts.clear();
+    }
+
+    // ==================== Preview ====================
+    private void doPreview() {
+        Calendar cal = Calendar.getInstance();
+        int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+        float p = sm.getTimeProgress(nowMin);
+        if (p < 0) p = 0.5f;
+        spawnText(p);
+
+        // Auto clear after display duration
+        int dur = sm.getDisplayDurationMs();
+        mainHandler.postDelayed(() -> {
+            if (!activeTexts.isEmpty()) {
+                activeTexts.get(0).destroy();
+                activeTexts.remove(0);
+            }
+            stopSelf();
+        }, dur + 2000);
+    }
+
+    // ==================== FloatingText (inner class) ====================
+
+    private class FloatingText {
+        private final String fullText;
+        private final int fontSize;
+        private final int color;
+        private final int typeMs;
+        private final int displayMs;
+        private final float dirDeg;
+        private final float shakeIntensity;
+
+        private View view;
+        private TextView tv;
+        private WindowManager.LayoutParams params;
+        private Handler h = new Handler(Looper.getMainLooper());
+        private boolean destroyed = false;
+
+        // Shake state
+        private float baseX, baseY;
+        private Runnable shakeRunnable;
+
+        FloatingText(String text, int fs, int c, int tms, int dms, float dir, float shk) {
+            this.fullText = text;
+            this.fontSize = fs;
+            this.color = c;
+            this.typeMs = tms;
+            this.displayMs = dms;
+            this.dirDeg = dir;
+            this.shakeIntensity = shk;
+        }
+
+        void show() {
+            view = LayoutInflater.from(FloatingTextService.this).inflate(R.layout.floating_text, null);
+            tv = view.findViewById(R.id.floating_hate_text);
+            tv.setTextSize(fontSize);
+            tv.setTextColor(color);
+            tv.setText(""); // start empty
+
+            // Layout params
+            int type;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+            } else {
+                type = WindowManager.LayoutParams.TYPE_PHONE;
+            }
+
+            params = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+            );
+            params.gravity = Gravity.TOP | Gravity.LEFT;
+
+            // Random position (avoid edges)
+            int maxW = wm.getDefaultDisplay().getWidth();
+            int maxH = wm.getDefaultDisplay().getHeight();
+            baseX = rng.nextInt(Math.max(10, maxW - 100));
+            baseY = rng.nextInt(Math.max(50, maxH - 200));
+            params.x = (int) baseX;
+            params.y = (int) baseY;
+
+            // Apply rotation
+            view.setRotation(dirDeg);
+
+            wm.addView(view, params);
+
+            // Start typewriter
+            startTypewriter(0);
+
+            // Start shake
+            if (shakeIntensity > 0) startShake();
+
+            // Schedule fade-out and removal
+            h.postDelayed(this::fadeOut, displayMs);
+        }
+
+        private void startTypewriter(int index) {
+            if (destroyed) return;
+            if (index < fullText.length()) {
+                tv.setText(fullText.substring(0, index + 1));
+                h.postDelayed(() -> startTypewriter(index + 1), typeMs);
+            }
+        }
+
+        private void startShake() {
+            shakeRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (destroyed || view == null) return;
+                    float dx = (rng.nextFloat() - 0.5f) * 2 * shakeIntensity;
+                    float dy = (rng.nextFloat() - 0.5f) * 2 * shakeIntensity;
+                    params.x = (int)(baseX + dx);
+                    params.y = (int)(baseY + dy);
+                    try { wm.updateViewLayout(view, params); } catch (Exception ignored) {}
+                    h.postDelayed(this, 40 + rng.nextInt(30));
+                }
+            };
+            h.post(shakeRunnable);
+        }
+
+        private void fadeOut() {
+            if (destroyed || view == null) return;
+            // Simple alpha fade
+            view.animate().alpha(0f).setDuration(800).withEndAction(this::destroy).start();
+        }
+
+        void destroy() {
+            if (destroyed) return;
+            destroyed = true;
+            if (shakeRunnable != null) h.removeCallbacks(shakeRunnable);
+            h.removeCallbacksAndMessages(null);
+            if (view != null) {
+                try { wm.removeView(view); } catch (Exception ignored) {}
+                view = null;
+            }
+            activeTexts.remove(this);
+        }
+    }
+
+    // ==================== Notification ====================
+
+    private void createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            layoutType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "悬浮文字服务",
+                    NotificationManager.IMPORTANCE_MIN);
+            ch.setDescription("后台悬浮文字");
+            ch.setShowBadge(false);
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.createNotificationChannel(ch);
+        }
+    }
+
+    private Notification buildNotification() {
+        Notification.Builder b;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            b = new Notification.Builder(this, CHANNEL_ID);
         } else {
-            layoutType = WindowManager.LayoutParams.TYPE_PHONE;
+            b = new Notification.Builder(this);
         }
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                layoutType,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
-                        | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION,
-                PixelFormat.TRANSLUCENT
-        );
-
-        params.gravity = Gravity.TOP | Gravity.LEFT;
-        params.x = 0;
-        params.y = 0;
-
-        windowManager.addView(floatingView, params);
-        isShowing = true;
-    }
-
-    /**
-     * 移除悬浮窗
-     */
-    private void removeFloatingView() {
-        if (floatingView != null && windowManager != null) {
-            try {
-                windowManager.removeView(floatingView);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            floatingView = null;
-            hateText = null;
-            isShowing = false;
-        }
-        
-        if (handler != null && updateRunnable != null) {
-            handler.removeCallbacks(updateRunnable);
-            updateRunnable = null;
-        }
-    }
-
-    /**
-     * 检查是否在时间范围内
-     */
-    private boolean isInTimeRange() {
-        Calendar cal = Calendar.getInstance();
-        int hour = cal.get(Calendar.HOUR_OF_DAY);
-        int minute = cal.get(Calendar.MINUTE);
-
-        int currentMinutes = hour * 60 + minute;
-        int startMinutes = settingsManager.getStartTotalMinutes();
-        int endMinutes = settingsManager.getEndTotalMinutes();
-
-        if (startMinutes <= endMinutes) {
-            return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
-        } else {
-            return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
-        }
-    }
-
-    /**
-     * 更新文字颜色
-     */
-    private void updateTextColor() {
-        if (hateText == null) return;
-
-        long elapsed = SystemClock.elapsedRealtime() - startTime;
-        int minutesPassed = (int) (elapsed / 60000);
-        int fadeMinutes = settingsManager.getFadeMinutes();
-
-        float ratio = (float) minutesPassed / fadeMinutes;
-        ratio = Math.min(ratio, 1.0f);
-
-        int alpha = (int) (ratio * 255);
-        int color = Color.argb(alpha, Color.red(BLOOD_RED), Color.green(BLOOD_RED), Color.blue(BLOOD_RED));
-        hateText.setTextColor(color);
-    }
-
-    /**
-     * 启动定时更新颜色
-     */
-    private void startColorUpdate() {
-        if (updateRunnable != null) {
-            handler.removeCallbacks(updateRunnable);
-        }
-
-        updateRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (!isInTimeRange()) {
-                    removeFloatingView();
-                    scheduleNextCheck();
-                    return;
-                }
-
-                updateTextColor();
-                handler.postDelayed(this, 60000); // 每分钟更新
-            }
-        };
-
-        // 立即更新一次
-        updateTextColor();
-        
-        // 延迟到下一分钟整
-        Calendar cal = Calendar.getInstance();
-        int seconds = cal.get(Calendar.SECOND);
-        int delay = (60 - seconds) * 1000;
-        handler.postDelayed(updateRunnable, delay);
-    }
-
-    /**
-     * 预览模式：快速播放动画
-     */
-    private void startPreviewAnimation() {
-        if (updateRunnable != null) {
-            handler.removeCallbacks(updateRunnable);
-        }
-
-        final int[] progress = {0};
-        
-        updateRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (hateText == null) return;
-
-                progress[0] += 2;
-                if (progress[0] > 100) {
-                    progress[0] = 100;
-                }
-
-                float ratio = (float) progress[0] / 100.0f;
-                int alpha = (int) (ratio * 255);
-                int color = Color.argb(alpha, Color.red(BLOOD_RED), Color.green(BLOOD_RED), Color.blue(BLOOD_RED));
-                hateText.setTextColor(color);
-
-                if (progress[0] < 100) {
-                    handler.postDelayed(this, 50);
-                }
-            }
-        };
-
-        handler.post(updateRunnable);
-    }
-
-    /**
-     * 定时检查是否到了触发时间
-     */
-    private void scheduleNextCheck() {
-        if (updateRunnable != null) {
-            handler.removeCallbacks(updateRunnable);
-        }
-
-        updateRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (isInTimeRange()) {
-                    showFloatingView();
-                    startTime = SystemClock.elapsedRealtime();
-                    startColorUpdate();
-                } else {
-                    // 每分钟检查一次
-                    handler.postDelayed(this, 60000);
-                }
-            }
-        };
-
-        handler.postDelayed(updateRunnable, 60000);
+        return b.setContentTitle("系统服务")
+                .setContentText("正在运行")
+                .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                .setPriority(Notification.PRIORITY_MIN)
+                .setOngoing(true)
+                .build();
     }
 
     @Override
     public void onDestroy() {
+        stopLoop();
         super.onDestroy();
-        removeFloatingView();
     }
 
     @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
+    public IBinder onBind(Intent intent) { return null; }
 }
