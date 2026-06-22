@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
     android:background="@android:color/transparent">
 
     <TextView
         android:id="@+id/floating_hate_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_centerInParent="true"
-        android:text="我好恨"
-        android:textSize="72sp"
-        android:textStyle="bold"
+        android:text=""
+        android:textSize="36sp"
+        android:textColor="#C81414"
+        android:shadowColor="#66000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="8"
+        android:fontFamily="sans-serif-medium"
         android:gravity="center"
-        android:includeFontPadding="false" />
+        android:padding="8dp" />
 
-</RelativeLayout>
+</FrameLayout>
