@@ -1,8 +1,8 @@
 package com.ihatethis;
 
-import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.graphics.Color;
@@ -11,12 +11,13 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
-
+import androidx.core.app.NotificationCompat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
@@ -24,78 +25,116 @@ import java.util.Random;
 
 public class FloatingTextService extends Service {
 
-    private static final String CHANNEL_ID = "floating_text_v4";
-    private static final int NOTIFY_ID = 1;
+    private static final String TAG = "FloatingText";
+    private static final String CHANNEL_ID = "ihatethis_fg";
+    private static final int NOTIF_ID = 1;
 
-    private WindowManager wm;
     private SettingsManager sm;
+    private WindowManager wm;
     private Handler mainHandler;
     private Random rng = new Random();
-
-    private boolean running = false;
-    private final List<FloatingText> activeTexts = new ArrayList<>();
+    private boolean running;
+    private List<FloatingText> activeTexts = new ArrayList<>();
 
     @Override
     public void onCreate() {
         super.onCreate();
-        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         sm = new SettingsManager(this);
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         mainHandler = new Handler(Looper.getMainLooper());
-        createChannel();
-        startForeground(NOTIFY_ID, buildNotification());
+        createNotificationChannel();
+        startForeground(NOTIF_ID, new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("我好恨 服务").setContentText("浮动文字服务运行中")
+                .setOngoing(true).setPriority(NotificationCompat.PRIORITY_LOW).build());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null) {
-            String action = intent.getAction();
-            if ("START".equals(action)) { startLoop(); }
-            else if ("STOP".equals(action)) { stopLoop(); stopSelf(); }
-            else if ("PREVIEW".equals(action)) { doPreview(); }
+        if (intent == null) return START_NOT_STICKY;
+        String action = intent.getAction();
+        if (action == null) return START_NOT_STICKY;
+
+        // Verify overlay permission before doing anything
+        if (!hasOverlayPerm()) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        switch (action) {
+            case "START":
+                stopLoop();
+                startLoop();
+                break;
+            case "PREVIEW":
+                stopLoop();
+                doPreview();
+                break;
+            case "STOP":
+                stopLoop();
+                break;
         }
         return START_NOT_STICKY;
     }
 
-    // ==================== Main Loop ====================
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
+
+    @Override
+    public void onDestroy() {
+        stopLoop();
+        super.onDestroy();
+    }
+
+    // ==================== Loop ====================
 
     private void startLoop() {
         if (running) return;
         running = true;
         scheduleNext();
+        Log.d(TAG, "Loop started");
     }
 
     private void stopLoop() {
         running = false;
         mainHandler.removeCallbacksAndMessages(null);
-        clearAllTexts();
+        for (FloatingText ft : activeTexts) ft.destroy();
+        activeTexts.clear();
+        Log.d(TAG, "Loop stopped");
     }
 
     private void scheduleNext() {
         if (!running) return;
-
         Calendar cal = Calendar.getInstance();
         int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
         float progress = sm.getTimeProgress(nowMin);
-
         if (progress < 0) {
-            // Not in range, check again in 30s
+            // Not in trigger window, check again in 30s
             mainHandler.postDelayed(this::scheduleNext, 30000);
             return;
         }
-
-        // Spawn text
         spawnText(progress);
-
-        // Schedule next based on frequency
         int freq = sm.getInterpolatedFrequency(progress);
         if (freq <= 0) freq = 1;
         long interval = 60000L / freq;
-        // Add slight randomness ±20%
         interval = (long)(interval * (0.8 + rng.nextFloat() * 0.4));
         mainHandler.postDelayed(this::scheduleNext, interval);
     }
 
-    // ==================== Spawn & Animate ====================
+    private void doPreview() {
+        Calendar cal = Calendar.getInstance();
+        int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+        float p = sm.getTimeProgress(nowMin);
+        if (p < 0) p = 0.5f; // fallback to midpoint if outside window
+        spawnText(p);
+        // Auto-stop after display
+        mainHandler.postDelayed(() -> {
+            for (FloatingText ft : activeTexts) ft.destroy();
+            activeTexts.clear();
+            stopSelf();
+        }, sm.getDisplayDurationMs() + 2500);
+    }
+
+    // ==================== Spawn ====================
 
     private void spawnText(float progress) {
         String[] pool = sm.getTexts();
@@ -104,210 +143,159 @@ public class FloatingTextService extends Service {
         if (valid.isEmpty()) return;
 
         String text = valid.get(rng.nextInt(valid.size()));
-
-        // Font size: random between min and max
-        int minF = sm.getInterpolatedMinFont(progress);
-        int maxF = sm.getInterpolatedMaxFont(progress);
-        if (maxF < minF) maxF = minF;
-        int fontSize = minF + rng.nextInt(maxF - minF + 1);
-
-        int color = sm.getFontColor();
-        int displayMs = sm.getDisplayDurationMs();
-        int typeMs = sm.getTypingSpeedMs();
-        float dirDeg = sm.getInterpolatedDirection(progress);
-        float shake = sm.getInterpolatedShake(progress);
-
-        // Random rotation direction (±)
-        if (rng.nextBoolean()) dirDeg = -dirDeg;
-
-        FloatingText ft = new FloatingText(text, fontSize, color, typeMs, displayMs, dirDeg, shake);
-        activeTexts.add(ft);
-        ft.show();
-    }
-
-    private void clearAllTexts() {
-        for (FloatingText ft : new ArrayList<>(activeTexts)) {
-            ft.destroy();
+        FloatingText ft = new FloatingText(text, progress);
+        try {
+            ft.show();
+            activeTexts.add(ft);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show floating text: " + e.getMessage());
         }
-        activeTexts.clear();
     }
 
-    // ==================== Preview ====================
-    private void doPreview() {
-        Calendar cal = Calendar.getInstance();
-        int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
-        float p = sm.getTimeProgress(nowMin);
-        if (p < 0) p = 0.5f;
-        spawnText(p);
-
-        // Auto clear after display duration
-        int dur = sm.getDisplayDurationMs();
-        mainHandler.postDelayed(() -> {
-            if (!activeTexts.isEmpty()) {
-                activeTexts.get(0).destroy();
-                activeTexts.remove(0);
-            }
-            stopSelf();
-        }, dur + 2000);
-    }
-
-    // ==================== FloatingText (inner class) ====================
+    // ==================== Floating Text ====================
 
     private class FloatingText {
-        private final String fullText;
-        private final int fontSize;
-        private final int color;
-        private final int typeMs;
-        private final int displayMs;
-        private final float dirDeg;
-        private final float shakeIntensity;
+        final String message;
+        final float progress;
+        View view;
+        TextView tv;
+        boolean destroyed;
+        WindowManager.LayoutParams params;
 
-        private View view;
-        private TextView tv;
-        private WindowManager.LayoutParams params;
-        private Handler h = new Handler(Looper.getMainLooper());
-        private boolean destroyed = false;
-
-        // Shake state
-        private float baseX, baseY;
-        private Runnable shakeRunnable;
-
-        FloatingText(String text, int fs, int c, int tms, int dms, float dir, float shk) {
-            this.fullText = text;
-            this.fontSize = fs;
-            this.color = c;
-            this.typeMs = tms;
-            this.displayMs = dms;
-            this.dirDeg = dir;
-            this.shakeIntensity = shk;
+        FloatingText(String msg, float p) {
+            message = msg; progress = p;
         }
 
         void show() {
-            view = LayoutInflater.from(FloatingTextService.this).inflate(R.layout.floating_text, null);
-            tv = view.findViewById(R.id.floating_hate_text);
-            tv.setTextSize(fontSize);
-            tv.setTextColor(color);
-            tv.setText(""); // start empty
+            if (destroyed) return;
+            view = LayoutInflater.from(FloatingTextService.this)
+                    .inflate(R.layout.floating_text, null);
+            tv = view.findViewById(R.id.tv_text);
+            if (tv == null) return;
+            tv.setText(message);
 
-            // Layout params
-            int type;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-            } else {
-                type = WindowManager.LayoutParams.TYPE_PHONE;
-            }
+            int minF = sm.getInterpolatedMinFont(progress);
+            int maxF = sm.getInterpolatedMaxFont(progress);
+            int fs = minF + rng.nextInt(Math.max(1, maxF - minF + 1));
+            tv.setTextSize(fs);
+            tv.setTextColor(sm.getFontColor());
+            tv.setShadowLayer(4 + rng.nextFloat() * 4,
+                    2 + rng.nextFloat() * 3, 2 + rng.nextFloat() * 3, 0x88000000);
 
             params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
-                    type,
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_PHONE,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                             | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT
-            );
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT);
+
+            int screenW = wm.getDefaultDisplay().getWidth();
+            int screenH = wm.getDefaultDisplay().getHeight();
+            int x = rng.nextInt(Math.max(1, screenW - 100));
+            int y = rng.nextInt(Math.max(1, screenH - 100));
+
             params.gravity = Gravity.TOP | Gravity.LEFT;
+            params.x = x; params.y = y;
 
-            // Random position (avoid edges)
-            int maxW = wm.getDefaultDisplay().getWidth();
-            int maxH = wm.getDefaultDisplay().getHeight();
-            baseX = rng.nextInt(Math.max(10, maxW - 100));
-            baseY = rng.nextInt(Math.max(50, maxH - 200));
-            params.x = (int) baseX;
-            params.y = (int) baseY;
+            // Direction offset
+            float dir = sm.getInterpolatedDirection(progress);
+            if (dir > 0) {
+                float rad = (float) Math.toRadians(dir);
+                if (rng.nextBoolean()) rad = -rad;
+                view.setRotation(rad * 180f / (float) Math.PI);
+            }
 
-            // Apply rotation
-            view.setRotation(dirDeg);
+            // Shake
+            float shakeIntensity = sm.getInterpolatedShake(progress);
+            startShake(shakeIntensity);
 
             wm.addView(view, params);
 
-            // Start typewriter
-            startTypewriter(0);
+            // Typewriter
+            startTypewriter();
 
-            // Start shake
-            if (shakeIntensity > 0) startShake();
+            // Fade out
+            int dur = sm.getDisplayDurationMs();
+            int speed = sm.getTypingSpeedMs();
+            long fadeDelay = dur + speed * message.length();
+            mainHandler.postDelayed(() -> {
+                if (!destroyed && view != null) {
+                    view.animate().alpha(0f).setDuration(400).withEndAction(this::destroy).start();
+                }
+            }, fadeDelay);
 
-            // Schedule fade-out and removal
-            h.postDelayed(this::fadeOut, displayMs);
+            // Remove from activeTexts after fade
+            mainHandler.postDelayed(() -> {
+                if (!destroyed) {
+                    activeTexts.remove(this);
+                    destroy();
+                }
+            }, fadeDelay + 500);
         }
 
-        private void startTypewriter(int index) {
-            if (destroyed) return;
-            if (index < fullText.length()) {
-                tv.setText(fullText.substring(0, index + 1));
-                h.postDelayed(() -> startTypewriter(index + 1), typeMs);
-            }
+        void startTypewriter() {
+            if (destroyed || tv == null) return;
+            tv.setText("");
+            int speed = sm.getTypingSpeedMs();
+            final int[] idx = {0};
+            Runnable type = new Runnable() {
+                @Override
+                public void run() {
+                    if (destroyed || tv == null) return;
+                    if (idx[0] < message.length()) {
+                        tv.setText(message.substring(0, idx[0] + 1));
+                        idx[0]++;
+                        mainHandler.postDelayed(this, speed);
+                    }
+                }
+            };
+            mainHandler.post(type);
         }
 
-        private void startShake() {
-            shakeRunnable = new Runnable() {
+        void startShake(float intensity) {
+            if (destroyed || view == null || intensity < 0.5f) return;
+            final int origX = params.x, origY = params.y;
+            Runnable shake = new Runnable() {
                 @Override
                 public void run() {
                     if (destroyed || view == null) return;
-                    float dx = (rng.nextFloat() - 0.5f) * 2 * shakeIntensity;
-                    float dy = (rng.nextFloat() - 0.5f) * 2 * shakeIntensity;
-                    params.x = (int)(baseX + dx);
-                    params.y = (int)(baseY + dy);
+                    params.x = origX + (int)((rng.nextFloat() - 0.5f) * 2 * intensity);
+                    params.y = origY + (int)((rng.nextFloat() - 0.5f) * 2 * intensity);
                     try { wm.updateViewLayout(view, params); } catch (Exception ignored) {}
-                    h.postDelayed(this, 40 + rng.nextInt(30));
+                    mainHandler.postDelayed(this, 50 + rng.nextInt(30));
                 }
             };
-            h.post(shakeRunnable);
-        }
-
-        private void fadeOut() {
-            if (destroyed || view == null) return;
-            // Simple alpha fade
-            view.animate().alpha(0f).setDuration(800).withEndAction(this::destroy).start();
+            mainHandler.post(shake);
         }
 
         void destroy() {
             if (destroyed) return;
             destroyed = true;
-            if (shakeRunnable != null) h.removeCallbacks(shakeRunnable);
-            h.removeCallbacksAndMessages(null);
-            if (view != null) {
+            if (view != null && view.getWindowToken() != null) {
                 try { wm.removeView(view); } catch (Exception ignored) {}
-                view = null;
             }
-            activeTexts.remove(this);
+            view = null;
         }
     }
 
-    // ==================== Notification ====================
+    // ==================== Utils ====================
 
-    private void createChannel() {
+    private boolean hasOverlayPerm() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            return android.provider.Settings.canDrawOverlays(this);
+        return true;
+    }
+
+    private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "悬浮文字服务",
-                    NotificationManager.IMPORTANCE_MIN);
-            ch.setDescription("后台悬浮文字");
-            ch.setShowBadge(false);
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(ch);
+            NotificationChannel ch = new NotificationChannel(
+                    CHANNEL_ID, "我好恨服务", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("浮动文字服务通知");
+            getSystemService(NotificationManager.class).createNotificationChannel(ch);
         }
     }
-
-    private Notification buildNotification() {
-        Notification.Builder b;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            b = new Notification.Builder(this, CHANNEL_ID);
-        } else {
-            b = new Notification.Builder(this);
-        }
-        return b.setContentTitle("系统服务")
-                .setContentText("正在运行")
-                .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                .setPriority(Notification.PRIORITY_MIN)
-                .setOngoing(true)
-                .build();
-    }
-
-    @Override
-    public void onDestroy() {
-        stopLoop();
-        super.onDestroy();
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) { return null; }
 }
