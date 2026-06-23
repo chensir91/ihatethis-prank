@@ -165,7 +165,8 @@ public class SettingsActivity extends Activity {
         btnStart = btn("启动"); btnStop = btn("停止"); btnPreview = btn("预览");
         btns.addView(btnStart); btns.addView(btnStop); btns.addView(btnPreview);
         root.addView(btns);
-        root.addView(hRow(btn("保存"), btn("默认")));
+        Button saveBtn = btn("保存"); Button resetBtn = btn("默认");
+root.addView(hRow(saveBtn, resetBtn));
 
         // Listeners
         SeekBar.OnSeekBarChangeListener gL = new SeekBar.OnSeekBarChangeListener() {
@@ -195,9 +196,8 @@ public class SettingsActivity extends Activity {
             saveAll(); if (!permOk()) { reqPerm(); return; }
             startSvc("PREVIEW"); t("预览已触发");
         });
-        btnSave = btn; /* reuse ref */
-        btnSave.setOnClickListener(v -> { saveAll(); t("已保存"); });
-        // "默认" button is the last one in hRow
+        saveBtn.setOnClickListener(v -> { saveAll(); t("已保存"); });
+        resetBtn.setOnClickListener(v -> { sm.resetToDefault(); loadAll(); updatePreviewScreen(); t("已恢复默认"); });
     }
 
     // ====== Preview ======
