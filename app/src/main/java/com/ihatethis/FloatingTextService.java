@@ -169,7 +169,7 @@ public class FloatingTextService extends Service {
             if (destroyed) return;
             view = LayoutInflater.from(FloatingTextService.this)
                     .inflate(R.layout.floating_text, null);
-            tv = view.findViewById(R.id.tv_text);
+            tv = view.findViewById(R.id.floating_hate_text);
             if (tv == null) return;
             tv.setText(message);
 
