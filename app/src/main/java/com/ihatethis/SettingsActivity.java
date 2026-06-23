@@ -81,8 +81,8 @@ public class SettingsActivity extends Activity {
 
     private void buildUI() {
         addSection("时间范围");
-        root.addView(hRow(label("开始"), npSH = np(0, 23), label("时"), npSM = np(0, 59), label("分")));
-        root.addView(hRow(label("结束"), npEH = np(0, 23), label("时"), npEM = np(0, 59), label("分")));
+        root.addView(hRow(lab("开始"), npSH = np(0, 23), lab("时"), npSM = np(0, 59), lab("分")));
+        root.addView(hRow(lab("结束"), npEH = np(0, 23), lab("时"), npEM = np(0, 59), lab("分")));
 
         addSection("字体大小 (sp)");
         tvMinF = lab(""); sbMinFS = sb(8, 120); sbMinFE = sb(8, 120);
